@@ -106,6 +106,9 @@ getInputData = (awayName, homeName) ->
     num /= 100
   return inputArray
 
+getAvgStats = (array) ->
+
+
 getOutputData = (gamesInfo) ->
   # get the scores of the games
   away = gamesInfo.awayTeam.score
@@ -117,22 +120,33 @@ getOutputData = (gamesInfo) ->
   homeFirst = home[0]
   homeFinal = home[home.length-1]
 
-  #output.push awayFirst
+
+  output.push awayFirst
   output.push awayFinal
-  #output.push homeFirst
+  output.push homeFirst
   output.push homeFinal
   # normalize the data
   output = do
     numStr <- _.map output
     num = parseFloat numStr
-    num /= 200
+    num /= 300
   return output
+  /*
+  awayFinal = parseFloat awayFinal
+  homeFinal = parseFloat homeFinal
+  output.push (awayFinal + homeFinal)/300
+  return output
+  */
 
+
+# set the fields for input
+validFields = [\PTS \FG% \3P% \FT% \REB \AST \STL \TO]
 # merge the values of Objects to an array
 getValueFromArray = (array) ->
   valuesArray = []
   for k,v of array
-    if k is not \SPLIT
+    #if k is not \SPLIT
+    if k in validFields
       # remove the '%' in the values
       digitStr = v.match /\d*\.*\d*/
       digitStr = digitStr[0]
@@ -144,7 +158,8 @@ err, db <- mongodb.connect url
 
 createNN = (trainingSet, callback) ->
   console.log trainingSet
-  myPerceptron = new Architect.Perceptron 26, 50, 2
+  inputSize = validFields.length
+  myPerceptron = new Architect.Perceptron inputSize, 20, 20, 20, 20, 4
   myTrainer = new Trainer myPerceptron
   myTrainer.train trainingSet, do
     rate: 0.1
@@ -155,7 +170,7 @@ createNN = (trainingSet, callback) ->
   testData = getInputData \ATL, \BKN
   test = myPerceptron.activate testData
   for i in test
-    console.log i*200
+    console.log i*300
   callback null
 async.waterfall [
   # pass parameter to function 'loadTeaminfo'
