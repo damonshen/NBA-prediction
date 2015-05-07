@@ -59,7 +59,37 @@ loadTeamInfo = (db, callback)->
     #console.log allTeamsInfo
 
     _teamsInfo := allTeamsInfo
+    getMaxMinInTeamFieds!
     callback null, db, allTeamsInfo
+
+_teamFieldRange = {}
+getMaxMinInTeamFieds = ->
+  fieldRange = {}
+  # iterate for all teams
+  for teamName, teamData of _teamsInfo
+    # iterate for all SPLITs of teams
+    for split, teamRowData of teamData
+      # iterate all fields in the SPLIT
+      for fieldName, fieldValue of teamRowData
+        if fieldName is \SPLIT
+          continue
+        digitStr = fieldValue.match /\d*\.*\d*/
+        digitStr = digitStr[0]
+        fieldValue = parseFloat fieldValue
+        teamRowData[fieldName] = fieldValue
+        if fieldName not of fieldRange
+          fieldRange[fieldName] =
+            * max: fieldValue
+              min: fieldValue
+        else
+          if fieldValue > fieldRange[fieldName][\max]
+            fieldRange[fieldName][\max] = fieldValue
+          if fieldValue < fieldRange[fieldName][\min]
+            fieldRange[fieldName][\min] = fieldValue
+  _teamFieldRange := fieldRange
+
+
+
 
 # load the game information and add the team information
 # to generate the input data for neural network
@@ -67,7 +97,8 @@ loadGameInfo = (db, teamsInfo, callback) ->
   # the data of neural network
   dataSet = []
   gameCollection = db.collection('games')
-  err, games <- gameCollection.find!.toArray
+  err, games <- gameCollection.find {}, {limit: 10} .toArray
+  console.log games.length
   for game in games
     gameInput = []
     #console.log game.awayTeam.name, ' vs ', game.homeTeam.name
@@ -75,9 +106,6 @@ loadGameInfo = (db, teamsInfo, callback) ->
     homeName = game.homeTeam.name
     if awayName is \DAL or homeName is \DAL
       continue
-    # get team information
-    awayTeamInfo =  teamsInfo[awayName]['Road']
-    homeTeamInfo =  teamsInfo[homeName]['Home']
     inputData = getInputData awayName, homeName
     outputData = getOutputData game
     data = generateData inputData, outputData
@@ -85,25 +113,23 @@ loadGameInfo = (db, teamsInfo, callback) ->
   callback null, dataSet
 
 generateData = (inputArray, outputArray) ->
-  return data =
+  data =
     * input: inputArray
       output: outputArray
+  log data
+  return data
 
 getInputData = (awayName, homeName) ->
   # get the teams information
   awayTeamInfo =  _teamsInfo[awayName]['Road']
   homeTeamInfo =  _teamsInfo[homeName]['Home']
   # merge the object into array and remove the '%'
-  awayTeamValuesArray = getValueFromArray awayTeamInfo
-  homeTeamValuesArray = getValueFromArray homeTeamInfo
+  awayTeamValuesArray = getNormalizeValueArray awayTeamInfo
+  homeTeamValuesArray = getNormalizeValueArray homeTeamInfo
 
   # concat two array
   inputArray = awayTeamValuesArray.concat homeTeamValuesArray
-  # normalize the input data
-  inputArray = do
-    numStr <- _.map inputArray
-    num = parseFloat numStr
-    num /= 100
+  #console.log inputArray
   return inputArray
 
 getAvgStats = (array) ->
@@ -121,6 +147,8 @@ getOutputData = (gamesInfo) ->
   homeFinal = home[home.length-1]
 
 
+  output = if awayFinal > homeFinal then [1 0] else [0 1]
+  /*
   output.push awayFirst
   output.push awayFinal
   output.push homeFirst
@@ -129,7 +157,8 @@ getOutputData = (gamesInfo) ->
   output = do
     numStr <- _.map output
     num = parseFloat numStr
-    num /= 300
+    num = (num - 50) / (150 - 50)
+  */
   return output
   /*
   awayFinal = parseFloat awayFinal
@@ -140,37 +169,42 @@ getOutputData = (gamesInfo) ->
 
 
 # set the fields for input
-validFields = [\PTS \FG% \3P% \FT% \REB \AST \STL \TO]
+validFields = [\PTS ]
 # merge the values of Objects to an array
-getValueFromArray = (array) ->
+getNormalizeValueArray = (array) ->
   valuesArray = []
-  for k,v of array
-    #if k is not \SPLIT
-    if k in validFields
-      # remove the '%' in the values
-      digitStr = v.match /\d*\.*\d*/
-      digitStr = digitStr[0]
-      valuesArray.push parseInt digitStr
+  for fieldName, fieldValue of array
+    #if fieldName is not \SPLIT
+    if fieldName in validFields
+      range = _teamFieldRange[fieldName]
+      max = range.max
+      min = range.min
+      normalizeValue = (fieldValue - min) / (max - min)
+      valuesArray.push  normalizeValue
   return valuesArray
 
 # connect to database
 err, db <- mongodb.connect url
 
 createNN = (trainingSet, callback) ->
-  console.log trainingSet
   inputSize = validFields.length
-  myPerceptron = new Architect.Perceptron inputSize, 20, 20, 20, 20, 4
+  myPerceptron = new Architect.Perceptron inputSize, 1, 2
   myTrainer = new Trainer myPerceptron
   myTrainer.train trainingSet, do
     rate: 0.1
-    iterations: 10000
+    iterations: 1000
     error: 0.1
-    log: 1000
-    cost: Trainer.cost.CROSS_ENTROPY
-  testData = getInputData \ATL, \BKN
-  test = myPerceptron.activate testData
-  for i in test
-    console.log i*300
+    log: 100
+  testData = [1 0]
+  log testData
+  testResult = myPerceptron.activate testData
+  test2 = [0 1]
+  testresult2 = myPerceptron.activate test2
+  log test2
+  for i in testResult
+    console.log i
+  for i in testresult2
+    console.log i
   callback null
 async.waterfall [
   # pass parameter to function 'loadTeaminfo'
